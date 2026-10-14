@@ -19,16 +19,27 @@
   <p id="line">One moment.</p>
 </main>
 <script>
-// Temporary return page for Cabinet's Slack sign-in on a computer. Slack only returns to an
-// https address, so it lands here and this page hands the code straight to the Cabinet
-// waiting on this same computer. The port travels in Slack's state as "p<port>.<random>".
-// It only ever forwards to 127.0.0.1, and it never keeps or sends the code anywhere else.
+// Return page for Cabinet's Slack sign-in. Slack only returns to an https address, so it lands
+// here and this page hands the code on, to one of three places read from Slack's state:
+//   "p<port>.<random>"  Cabinet on this computer: http://127.0.0.1:<port>/callback
+//   "c<slug>.<random>"  a cabinet on Cabinet Cloud: https://<slug>.runcabinet.com/...
+//   "w<port>.<random>"  a local copy of a cloud cabinet (development): http://127.0.0.1:<port>/...
+// The state names a port or a cabinet, never an address, so the page can only ever forward to
+// 127.0.0.1 or to a runcabinet.com cabinet. It never keeps or sends the code anywhere else.
 (function () {
   var q = new URLSearchParams(location.search);
   var state = q.get("state") || "";
-  var m = /^p(\d{4,5})\.[A-Za-z0-9_-]{20,}$/.exec(state);
-  var port = m ? Number(m[1]) : 0;
-  if (!m || port < 1024 || port > 65535) {
+  var RETURN = "/api/connectors/sign-in/return";
+  var target = null;
+  var m;
+  if ((m = /^p(\d{4,5})\.[A-Za-z0-9_-]{20,}$/.exec(state)) && Number(m[1]) >= 1024 && Number(m[1]) <= 65535) {
+    target = "http://127.0.0.1:" + m[1] + "/callback";
+  } else if ((m = /^c([a-z0-9][a-z0-9-]{1,30})\.[A-Za-z0-9_-]{20,}$/.exec(state))) {
+    target = "https://" + m[1] + ".runcabinet.com" + RETURN;
+  } else if ((m = /^w(\d{4,5})\.[A-Za-z0-9_-]{20,}$/.exec(state)) && Number(m[1]) >= 1024 && Number(m[1]) <= 65535) {
+    target = "http://127.0.0.1:" + m[1] + RETURN;
+  }
+  if (!target) {
     document.getElementById("title").textContent = "This link doesn't belong to Cabinet.";
     document.getElementById("line").textContent = "Go back to Cabinet and press Connect Slack again.";
     return;
@@ -36,10 +47,12 @@
   var out = new URLSearchParams();
   ["code", "state", "error"].forEach(function (k) { if (q.get(k)) out.set(k, q.get(k)); });
   history.replaceState(null, "", location.pathname);
-  location.replace("http://127.0.0.1:" + port + "/callback?" + out.toString());
+  location.replace(target + "?" + out.toString());
   setTimeout(function () {
     document.getElementById("title").textContent = "Couldn't reach Cabinet.";
-    document.getElementById("line").textContent = "Make sure Cabinet is open on this computer, then press Connect Slack again.";
+    document.getElementById("line").textContent = state.charAt(0) === "c"
+      ? "Open your cabinet and press Connect Slack again."
+      : "Make sure Cabinet is open on this computer, then press Connect Slack again.";
   }, 4000);
 })();
 </script>
